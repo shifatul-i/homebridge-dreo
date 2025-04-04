@@ -196,7 +196,7 @@ export class HumidifierAccessory extends BaseAccessory {
   }
 
   setActive(value: unknown): void {
-    this.platform.log.debug('Triggered SET Active: %s', value);
+    this.platform.log.info('Triggered SET Active: %s', value);
     const isActive = Boolean(value);
     // Check state to prevent duplicate requests
     if (this.on !== isActive) {
@@ -213,7 +213,7 @@ export class HumidifierAccessory extends BaseAccessory {
   }
 
   setSleepMode(value: unknown): void {
-    this.platform.log.debug('Triggered SET SleepMode: %s', value);
+    this.platform.log.info('Triggered SET SleepMode: %s', value);
     const isSleepMode = Boolean(value);
     let command: {};
     if (isSleepMode) {
@@ -245,7 +245,7 @@ export class HumidifierAccessory extends BaseAccessory {
   }
 
   setHotFog(value: unknown): void {
-    this.platform.log.debug('Triggered SET HotFog: %s', value);
+    this.platform.log.info('Triggered SET HotFog: %s', value);
     this.fogHot = Boolean(value);
     let command: {};
     if (this.on) {
@@ -268,7 +268,7 @@ export class HumidifierAccessory extends BaseAccessory {
   }
 
   setTargetHumidifierMode(value: unknown): void {
-    this.platform.log.debug('Triggered SET TargetHumidifierState: %s', value);
+    this.platform.log.info('Triggered SET TargetHumidifierState: %s', value);
     this.deroMode = Number(value);
     this.platform.webHelper.control(this.sn, {'mode': this.deroMode});
   }
@@ -288,11 +288,11 @@ export class HumidifierAccessory extends BaseAccessory {
       this.platform.log.warn('ERROR: Triggered SET TargetHumidity (Manual): %s', Number(value));
     } else if (this.deroMode === 1) { // auto
       this.targetHumAutoLevel = targetValue;
-      this.platform.log.debug('Triggered SET TargetHumidity (Auto): %s', value);
+      this.platform.log.info('Triggered SET TargetHumidity (Auto): %s', value);
       this.platform.webHelper.control(this.sn, {'rhautolevel': this.targetHumAutoLevel});
     } else if (this.deroMode === 2) { // sleep
       this.targetHumSleepLevel = targetValue;
-      this.platform.log.debug('Triggered SET TargetHumidity (Sleep): %s', value);
+      this.platform.log.info('Triggered SET TargetHumidity (Sleep): %s', value);
       this.platform.webHelper.control(this.sn, {'rhsleeplevel': this.targetHumSleepLevel});
     }
   }
@@ -302,16 +302,16 @@ export class HumidifierAccessory extends BaseAccessory {
     switch (this.deroMode) {
       case 1: // auto
         threshold = this.targetHumAutoLevel;
-        this.platform.log.debug('Triggered GET TargetHumidity (Auto): %s', threshold);
+        this.platform.log.info('Triggered GET TargetHumidity (Auto): %s', threshold);
         break;
       case 2: // sleep
         threshold = this.targetHumSleepLevel;
-        this.platform.log.debug('Triggered GET TargetHumidity (Sleep): %s', threshold);
+        this.platform.log.info('Triggered GET TargetHumidity (Sleep): %s', threshold);
         break;
       default: // manual do not have a target humidity, it has fog level
         // return the threshold for Auto mode as a sensible default when manual is active
         threshold = this.targetHumAutoLevel || DEFAULT_HUMIDITY;
-        this.platform.log.debug('Triggered GET TargetHumidity (Manual - Returning Auto Level): %s', threshold);
+        this.platform.log.info('Triggered GET TargetHumidity (Manual - Returning Auto Level): %s', threshold);
         break;
     }
     return Math.max(MIN_HUMIDITY, threshold || DEFAULT_HUMIDITY);
@@ -319,7 +319,7 @@ export class HumidifierAccessory extends BaseAccessory {
 
   // Can only be set in manual mode
   setTargetFogLevel(value: unknown): void {
-    this.platform.log.debug('Triggered SET TargetFogLevel: %s', value);
+    this.platform.log.info('Triggered SET TargetFogLevel: %s', value);
     this.manualFogLevel = Number(value);
     if (this.manualFogLevel === 0) { // If manual fog level is 0, turn off the humidifier
       this.on = false; // Turn off humidifier
@@ -343,7 +343,7 @@ export class HumidifierAccessory extends BaseAccessory {
   private updateCurrentHumidifierState() {
     // Update HomeKit current humidifier state based on power and suspend states
     this.currState = this.on ? this.suspended ? 1 : 2 : 0;
-    this.platform.log.debug('Current Humidifier State: %s', this.currState);
+    this.platform.log.info('Current Humidifier State: %s', this.currState);
     this.humidifierService.updateCharacteristic(this.platform.Characteristic.CurrentHumidifierDehumidifierState, this.currState);
     this.sleepSwitchService.updateCharacteristic(this.platform.Characteristic.On, this.getSleepMode());
     this.hotFogSwitchService.updateCharacteristic(this.platform.Characteristic.On, this.getHotFog());
@@ -372,41 +372,41 @@ export class HumidifierAccessory extends BaseAccessory {
       case 'poweron':
         if (this.on !== reported.poweron) {
           this.on = reported.poweron ?? this.on;
-          this.platform.log.debug('Humidifier power: %s', this.on);
+          this.platform.log.info('Humidifier power: %s', this.on);
           this.humidifierService.updateCharacteristic(this.platform.Characteristic.Active, this.on);
           this.updateCurrentHumidifierState();
         }
         break;
       case 'mode':
         this.deroMode = reported.mode ?? this.deroMode;
-        this.platform.log.debug('Humidifier mode reported: %s', this.deroMode);
+        this.platform.log.info('Humidifier mode reported: %s', this.deroMode);
         this.updateTargetHumidifierState(this.deroMode);
         break;
       case 'suspend':
         this.suspended = reported.suspend ?? this.suspended;
-        this.platform.log.debug('Humidifier suspended: %s', this.suspended);
+        this.platform.log.info('Humidifier suspended: %s', this.suspended);
         this.updateCurrentHumidifierState();
         break;
       case 'rh':
         this.currentHum = reported.rh ?? this.currentHum;
-        this.platform.log.debug('Humidifier humidity: %s', this.currentHum);
+        this.platform.log.info('Humidifier humidity: %s', this.currentHum);
         this.humidifierService.updateCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity, this.currentHum);
         this.humidityService.updateCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity, this.currentHum);
         break;
       case 'hotfogon':
         this.fogHot = reported.hotfogon ?? this.fogHot;
-        this.platform.log.debug('Humidifier hotfogon: %s', this.fogHot);
+        this.platform.log.info('Humidifier hotfogon: %s', this.fogHot);
         this.hotFogSwitchService.updateCharacteristic(this.platform.Characteristic.On, this.fogHot);
         break;
       case 'foglevel':
         this.manualFogLevel = reported.foglevel ?? this.manualFogLevel;
-        this.platform.log.debug('Humidifier manualFogLevel: %s', this.manualFogLevel);
+        this.platform.log.info('Humidifier manualFogLevel: %s', this.manualFogLevel);
         // Fog level can change even when not in manual mode. So no need to change mode to manual.
         this.humidifierService.updateCharacteristic(this.platform.Characteristic.RotationSpeed, this.manualFogLevel);
         break;
       case 'rhautolevel':
         this.targetHumAutoLevel = reported.rhautolevel ?? this.targetHumAutoLevel;
-        this.platform.log.debug('Humidifier targetHumAutoLevel: %s', this.targetHumAutoLevel);
+        this.platform.log.info('Humidifier targetHumAutoLevel: %s', this.targetHumAutoLevel);
         if (this.deroMode === 1) {
           const valueToUpdate = Math.max(MIN_HUMIDITY, this.targetHumAutoLevel || DEFAULT_HUMIDITY);
           this.humidifierService
@@ -415,7 +415,7 @@ export class HumidifierAccessory extends BaseAccessory {
         break;
       case 'rhsleeplevel':
         this.targetHumSleepLevel = reported.rhsleeplevel ?? this.targetHumSleepLevel;
-        this.platform.log.debug('Humidifier targetHumSleepLevel: %s', this.targetHumSleepLevel);
+        this.platform.log.info('Humidifier targetHumSleepLevel: %s', this.targetHumSleepLevel);
         if (this.deroMode === 2) {
           const valueToUpdate = Math.max(MIN_HUMIDITY, this.targetHumSleepLevel || DEFAULT_HUMIDITY);
           this.humidifierService
@@ -432,7 +432,7 @@ export class HumidifierAccessory extends BaseAccessory {
         }
         break;
       default:
-        this.platform.log.debug('Incoming [%s]: %s', key, reported);
+        this.platform.log.info('Incoming [%s]: %s', key, reported);
         break;
     }
   }
