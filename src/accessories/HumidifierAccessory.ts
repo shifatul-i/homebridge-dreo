@@ -88,8 +88,9 @@ export class HumidifierAccessory extends BaseAccessory {
     this.rgbLevel = String(state.rgblevel?.state ?? '0');  // Convert to string for consistency
     this.wrong = state.wrong?.state ?? 0;
     this.manualFogLevel = state.foglevel?.state ?? 0;
-    this.targetHumAutoLevel = state.rhautolevel?.state ?? DEFAULT_HUMIDITY;
-    this.targetHumSleepLevel = state.rhsleeplevel?.state ?? DEFAULT_HUMIDITY;
+    // Ensure humidity levels are within HomeKit valid range
+    this.targetHumAutoLevel = Math.max(MIN_HUMIDITY, Math.min(MAX_HUMIDITY, state.rhautolevel?.state ?? DEFAULT_HUMIDITY));
+    this.targetHumSleepLevel = Math.max(MIN_HUMIDITY, Math.min(MAX_HUMIDITY, state.rhsleeplevel?.state ?? DEFAULT_HUMIDITY));
 
     this.currState = this.on ? (this.suspended ? 1 : 2) : 0;
 
