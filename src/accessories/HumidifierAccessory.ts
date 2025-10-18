@@ -8,15 +8,18 @@ interface DreoStateReport {
   mode?: number;          // Mode 0-2 [manual, auto, sleep]
   suspend?: boolean;      // Suspended
   rh?: number;            // Current humidity
-  hotfogon?: boolean;     // Hot fog on
+  hotfogon?: boolean;     // Hot fog on (not available on all models)
   foglevel?: number;      // Fog level 0-6 [0: off, 1-6: levels]
   rhautolevel?: number;   // Target humidity level in auto mode
   rhsleeplevel?: number;  // Target humidity level in sleep mode
   ledlevel?: number;      // LED indicator level 0-2 [off, low, high]
-  rgblevel?: string;      // RGB display level 0-2 [off, low, high]
+  rgblevel?: string | number;  // RGB display level 0-2 [off, low, high]
   muteon?: boolean;       // Beep on/off
   wrong?: number;         // Error code 0-1 [0: no error, 1: no water]
   worktime?: number;      // Work time in minutes after last cleaning
+  filtertime?: number;    // Filter life percentage remaining
+  mcuon?: boolean;        // MCU status
+  connected?: boolean;    // Connection status
 }
 
 interface DreoMessage {
@@ -30,9 +33,9 @@ interface DreoState {
   mode: {state: number};
   suspend: {state: boolean};
   rh: {state: number};
-  hotfogon: {state: boolean};
+  hotfogon?: {state: boolean};  // Optional - not available on all models
   ledlevel: {state: number};
-  rgblevel: {state: string};
+  rgblevel: {state: string | number};  // Can be string or number depending on model
   foglevel: {state: number};
   rhautolevel: {state: number};
   rhsleeplevel: {state: number};
@@ -48,7 +51,7 @@ export class HumidifierAccessory extends BaseAccessory {
   private readonly humidifierService: Service;
   private readonly humidityService: Service;
   private readonly sleepSwitchService: Service;
-  private readonly hotFogSwitchService: Service;
+  private readonly hotFogSwitchService?: Service;  // Optional - not all models support hot fog
 
   // Cached copy of latest device states
   private on: boolean;        // poweron
@@ -82,7 +85,7 @@ export class HumidifierAccessory extends BaseAccessory {
     this.currentHum = state.rh?.state ?? 0;
     this.fogHot = state.hotfogon?.state ?? false;
     this.ledLevel = state.ledlevel?.state ?? 0;
-    this.rgbLevel = state.rgblevel?.state ?? '0';
+    this.rgbLevel = String(state.rgblevel?.state ?? '0');  // Convert to string for consistency
     this.wrong = state.wrong?.state ?? 0;
     this.manualFogLevel = state.foglevel?.state ?? 0;
     this.targetHumAutoLevel = state.rhautolevel?.state ?? DEFAULT_HUMIDITY;
@@ -100,8 +103,12 @@ export class HumidifierAccessory extends BaseAccessory {
     // Get the Switch service if it exists, otherwise create a new Switch service
     this.sleepSwitchService = this.accessory.getServiceById(this.platform.Service.Switch, 'SleepMode') ||
       this.accessory.addService(this.platform.Service.Switch, 'Sleep Mode', 'SleepMode');
-    this.hotFogSwitchService = this.accessory.getServiceById(this.platform.Service.Switch, 'HotFog') ||
-      this.accessory.addService(this.platform.Service.Switch, 'Warm Mist', 'HotFog');
+
+    // Only create Hot Fog switch if the device supports it (some models like HM311S don't have this feature)
+    if (state.hotfogon !== undefined) {
+      this.hotFogSwitchService = this.accessory.getServiceById(this.platform.Service.Switch, 'HotFog') ||
+        this.accessory.addService(this.platform.Service.Switch, 'Warm Mist', 'HotFog');
+    }
 
     // ON / OFF
     // Register handlers for the Humidifier Active characteristic
@@ -111,9 +118,13 @@ export class HumidifierAccessory extends BaseAccessory {
     this.sleepSwitchService.getCharacteristic(this.platform.Characteristic.On)
     .onGet(this.getSleepMode.bind(this))
     .onSet(this.setSleepMode.bind(this));
-    this.hotFogSwitchService.getCharacteristic(this.platform.Characteristic.On)
-    .onGet(this.getHotFog.bind(this))
-    .onSet(this.setHotFog.bind(this));
+
+    // Only register Hot Fog handlers if the service exists (device supports it)
+    if (this.hotFogSwitchService) {
+      this.hotFogSwitchService.getCharacteristic(this.platform.Characteristic.On)
+      .onGet(this.getHotFog.bind(this))
+      .onSet(this.setHotFog.bind(this));
+    }
 
     // Register handlers for Current Humidifier State characteristic
     // Disabling dehumidifying as it is not supported
@@ -246,6 +257,12 @@ export class HumidifierAccessory extends BaseAccessory {
   }
 
   setHotFog(value: unknown): void {
+    // Only proceed if this device supports hot fog
+    if (!this.hotFogSwitchService) {
+      this.platform.log.warn('Hot fog feature not supported on this model');
+      return;
+    }
+
     this.platform.log.debug('Triggered SET HotFog: %s', value);
     this.fogHot = Boolean(value);
     let command: {};
@@ -348,7 +365,11 @@ export class HumidifierAccessory extends BaseAccessory {
     this.platform.log.debug('Current Humidifier State: %s', this.currState);
     this.humidifierService.updateCharacteristic(this.platform.Characteristic.CurrentHumidifierDehumidifierState, this.currState);
     this.sleepSwitchService.updateCharacteristic(this.platform.Characteristic.On, this.getSleepMode());
-    this.hotFogSwitchService.updateCharacteristic(this.platform.Characteristic.On, this.getHotFog());
+
+    // Only update Hot Fog if the service exists (device supports it)
+    if (this.hotFogSwitchService) {
+      this.hotFogSwitchService.updateCharacteristic(this.platform.Characteristic.On, this.getHotFog());
+    }
   }
 
   /**
@@ -398,7 +419,10 @@ export class HumidifierAccessory extends BaseAccessory {
       case 'hotfogon':
         this.fogHot = reported.hotfogon ?? this.fogHot;
         this.platform.log.debug('Humidifier hotfogon: %s', this.fogHot);
-        this.hotFogSwitchService.updateCharacteristic(this.platform.Characteristic.On, this.fogHot);
+        // Only update if the service exists (device supports hot fog)
+        if (this.hotFogSwitchService) {
+          this.hotFogSwitchService.updateCharacteristic(this.platform.Characteristic.On, this.fogHot);
+        }
         break;
       case 'foglevel':
         this.manualFogLevel = reported.foglevel ?? this.manualFogLevel;
@@ -435,6 +459,19 @@ export class HumidifierAccessory extends BaseAccessory {
         } else {
           this.humidifierService.updateCharacteristic(this.platform.Characteristic.WaterLevel, 100);
         }
+        break;
+      case 'filtertime':
+        const filterLife = reported.filtertime ?? 100;
+        this.platform.log.debug('Humidifier filter life: %s%', filterLife);
+        // Could add a FilterLifeLevel characteristic if desired for HomeKit
+        break;
+      case 'worktime':
+        const workTime = reported.worktime ?? 0;
+        this.platform.log.debug('Humidifier work time since cleaning: %s minutes', workTime);
+        break;
+      case 'connected':
+        const connected = reported.connected ?? true;
+        this.platform.log.debug('Humidifier connection status: %s', connected ? 'Connected' : 'Disconnected');
         break;
       default:
         this.platform.log.debug('Incoming [%s]: %s', key, reported);
