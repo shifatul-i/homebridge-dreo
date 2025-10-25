@@ -55,7 +55,7 @@ export class HumidifierAccessory extends BaseAccessory {
 
   // Cached copy of latest device states
   private on: boolean;        // poweron
-  private deroMode: number;   // mode 0-2       [manual, auto, sleep]
+  private dreoMode: number;   // mode 0-2       [manual, auto, sleep]
   private suspended: boolean; // suspend
   private currentHum: number; // rh
   private fogHot: boolean;    // hotfogon
@@ -80,7 +80,7 @@ export class HumidifierAccessory extends BaseAccessory {
 
     // Update current state in homebridge from Dreo API
     this.on = state.poweron?.state ?? false;
-    this.deroMode = state.mode?.state ?? 0;
+    this.dreoMode = state.mode?.state ?? 0;
     this.suspended = state.suspend?.state ?? false;
     this.currentHum = state.rh?.state ?? 0;
     this.fogHot = state.hotfogon?.state ?? false;
@@ -222,7 +222,7 @@ export class HumidifierAccessory extends BaseAccessory {
   }
 
   getSleepMode(): boolean {
-    return this.on && this.deroMode === 2;
+    return this.on && this.dreoMode === 2;
   }
 
   setSleepMode(value: unknown): void {
@@ -230,20 +230,20 @@ export class HumidifierAccessory extends BaseAccessory {
     const isSleepMode = Boolean(value);
     let command: {};
     if (isSleepMode) {
-      this.deroMode = 2;
+      this.dreoMode = 2;
       if (this.on) {
-        command = {'mode': this.deroMode};
+        command = {'mode': this.dreoMode};
       } else {
         this.on = true;
-        command = {'poweron': true, 'mode': this.deroMode}; // Power on the humidifier
+        command = {'poweron': true, 'mode': this.dreoMode}; // Power on the humidifier
         this.humidifierService.updateCharacteristic(this.platform.Characteristic.Active, true);
       }
       setTimeout(() => {
         this.humidifierService.updateCharacteristic(this.platform.Characteristic.TargetHumidifierDehumidifierState, 1);
       }, 750);
     } else { // Run this only if the humidifier is on
-      this.deroMode = 0;
-      command = {'mode': this.deroMode};
+      this.dreoMode = 0;
+      command = {'mode': this.dreoMode};
       if (this.on) {
         setTimeout(() => {
           this.humidifierService.updateCharacteristic(this.platform.Characteristic.TargetHumidifierDehumidifierState, 0);
@@ -288,12 +288,12 @@ export class HumidifierAccessory extends BaseAccessory {
 
   setTargetHumidifierMode(value: unknown): void {
     this.platform.log.debug('Triggered SET TargetHumidifierState: %s', value);
-    this.deroMode = Number(value);
-    this.platform.webHelper.control(this.sn, {'mode': this.deroMode});
+    this.dreoMode = Number(value);
+    this.platform.webHelper.control(this.sn, {'mode': this.dreoMode});
   }
 
   getTargetHumidifierMode(): number {
-    return this.deroMode === 2 ? 1 : this.deroMode;
+    return this.dreoMode === 2 ? 1 : this.dreoMode;
   }
 
   getCurrentHumidity(): number {
@@ -303,13 +303,13 @@ export class HumidifierAccessory extends BaseAccessory {
   setTargetHumidity(value: unknown): void {
     // Ensure integer value for HomeKit
     const targetValue = Math.max(MIN_HUMIDITY, Math.min(MAX_HUMIDITY, Math.round(Number(value))));
-    if (this.deroMode === 0) { // manual
+    if (this.dreoMode === 0) { // manual
       this.platform.log.warn('ERROR: Triggered SET TargetHumidity (Manual): %s', Number(value));
-    } else if (this.deroMode === 1) { // auto
+    } else if (this.dreoMode === 1) { // auto
       this.targetHumAutoLevel = targetValue;
       this.platform.log.debug('Triggered SET TargetHumidity (Auto): %s', value);
       this.platform.webHelper.control(this.sn, {'rhautolevel': this.targetHumAutoLevel});
-    } else if (this.deroMode === 2) { // sleep
+    } else if (this.dreoMode === 2) { // sleep
       this.targetHumSleepLevel = targetValue;
       this.platform.log.debug('Triggered SET TargetHumidity (Sleep): %s', value);
       this.platform.webHelper.control(this.sn, {'rhsleeplevel': this.targetHumSleepLevel});
@@ -318,7 +318,7 @@ export class HumidifierAccessory extends BaseAccessory {
 
   getTargetHumidity(): number {
     let threshold: number;
-    switch (this.deroMode) {
+    switch (this.dreoMode) {
       case 1: // auto
         threshold = this.targetHumAutoLevel;
         this.platform.log.debug('Triggered GET TargetHumidity (Auto): %s', threshold);
@@ -347,12 +347,12 @@ export class HumidifierAccessory extends BaseAccessory {
       this.platform.webHelper.control(this.sn, {'poweron': this.on});
       return;
     }
-    if (this.deroMode === 0) { // manual
+    if (this.dreoMode === 0) { // manual
       this.platform.webHelper.control(this.sn, {'foglevel': this.manualFogLevel});
     } else {
-      this.platform.log.warn('WARN: Switching to manual mode to set fog level. Current mode: %s', this.deroMode);
-      this.deroMode = 0; // Set mode to manual
-      this.platform.webHelper.control(this.sn, {'mode': this.deroMode, 'foglevel': this.manualFogLevel});
+      this.platform.log.warn('WARN: Switching to manual mode to set fog level. Current mode: %s', this.dreoMode);
+      this.dreoMode = 0; // Set mode to manual
+      this.platform.webHelper.control(this.sn, {'mode': this.dreoMode, 'foglevel': this.manualFogLevel});
     }
   }
 
@@ -377,9 +377,9 @@ export class HumidifierAccessory extends BaseAccessory {
    * 0 HomeKit: Auto - Dero: Manual (0)
    * 1 HomeKit: Humidifying - Dero: Auto (1) & Sleep (2)
    **/
-  private updateTargetHumidifierState(deroMode: number) {
-    this.deroMode = deroMode;
-    if (this.deroMode === 2) {
+  private updateTargetHumidifierState(dreoMode: number) {
+    this.dreoMode = dreoMode;
+    if (this.dreoMode === 2) {
       if (!this.on) {
         this.on = true;
         this.humidifierService.updateCharacteristic(this.platform.Characteristic.Active, this.on);
@@ -387,7 +387,7 @@ export class HumidifierAccessory extends BaseAccessory {
       this.sleepSwitchService.updateCharacteristic(this.platform.Characteristic.On, true);
       this.humidifierService.updateCharacteristic(this.platform.Characteristic.TargetHumidifierDehumidifierState, 1);
     } else {
-      this.humidifierService.updateCharacteristic(this.platform.Characteristic.TargetHumidifierDehumidifierState, this.deroMode);
+      this.humidifierService.updateCharacteristic(this.platform.Characteristic.TargetHumidifierDehumidifierState, this.dreoMode);
     }
   }
 
@@ -402,9 +402,9 @@ export class HumidifierAccessory extends BaseAccessory {
         }
         break;
       case 'mode':
-        this.deroMode = reported.mode ?? this.deroMode;
-        this.platform.log.debug('Humidifier mode reported: %s', this.deroMode);
-        this.updateTargetHumidifierState(this.deroMode);
+        this.dreoMode = reported.mode ?? this.dreoMode;
+        this.platform.log.debug('Humidifier mode reported: %s', this.dreoMode);
+        this.updateTargetHumidifierState(this.dreoMode);
         break;
       case 'suspend':
         this.suspended = reported.suspend ?? this.suspended;
@@ -437,7 +437,7 @@ export class HumidifierAccessory extends BaseAccessory {
       case 'rhautolevel':
         this.targetHumAutoLevel = reported.rhautolevel ?? this.targetHumAutoLevel;
         this.platform.log.debug('Humidifier targetHumAutoLevel: %s', this.targetHumAutoLevel);
-        if (this.deroMode === 1) {
+        if (this.dreoMode === 1) {
           const valueToUpdate = Math.max(MIN_HUMIDITY, Math.min(MAX_HUMIDITY, Math.round(this.targetHumAutoLevel || DEFAULT_HUMIDITY)));
           this.humidifierService
           .updateCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold, valueToUpdate);
@@ -446,7 +446,7 @@ export class HumidifierAccessory extends BaseAccessory {
       case 'rhsleeplevel':
         this.targetHumSleepLevel = reported.rhsleeplevel ?? this.targetHumSleepLevel;
         this.platform.log.debug('Humidifier targetHumSleepLevel: %s', this.targetHumSleepLevel);
-        if (this.deroMode === 2) {
+        if (this.dreoMode === 2) {
           const valueToUpdate = Math.max(MIN_HUMIDITY, Math.min(MAX_HUMIDITY, Math.round(this.targetHumSleepLevel || DEFAULT_HUMIDITY)));
           this.humidifierService
           .updateCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold, valueToUpdate);
