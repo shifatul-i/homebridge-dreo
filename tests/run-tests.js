@@ -11,30 +11,34 @@ const path = require('path');
 // Test configurations
 const tests = [
   {
-    name: 'Humidity Validation Fix',
+    name: 'Humidity Fix Test',
+    description: 'Tests humidity range clamping and validation for HM311S',
     file: 'test-humidity-fix.js',
-    description: 'Tests the 90% humidity bug fix with comprehensive validation',
+    isShell: false,
   },
   {
-    name: 'HomeKit Display Fix',
+    name: 'HomeKit Display Test',
+    description: 'Tests HomeKit characteristic display mapping',
     file: 'test-homekit-display.js',
-    description: 'Tests humidity value display corrections (30%→30%, 90%→90%)',
+    isShell: false,
   },
   {
-    name: 'Humidifier Service Display',
+    name: 'Humidifier Display Test',
+    description: 'Tests service name display in HomeKit (Humidifier vs Humidifier-Dehumidifier)',
     file: 'test-humidifier-display.js',
-    description: 'Tests HomeKit service name fix ("Humidifier" vs "Humidifier-Dehumidifier")',
+    isShell: false,
   },
   {
-    name: 'Tile Display Fix',
+    name: 'Tile Display Test',
+    description: 'Tests HomeKit tile display vs slider synchronization',
     file: 'test-tile-display.js',
-    description: 'Tests HomeKit tile display accuracy for current humidity values',
+    isShell: false,
   },
   {
-    name: 'Model Display Test',
-    file: 'test-model-display.sh',
-    description: 'Tests model name display (DR-HHM001S → DR-HM311S)',
-    isShell: true,
+    name: 'Tile Display Fix Test',
+    description: 'Tests forced characteristic refresh to fix tile scaling issue',
+    file: 'test-tile-display-fix.js',
+    isShell: false,
   },
 ];
 
