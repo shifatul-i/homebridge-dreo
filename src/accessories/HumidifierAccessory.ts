@@ -171,11 +171,16 @@ export class HumidifierAccessory extends BaseAccessory {
     .onGet(this.getTargetHumidity.bind(this))
     .onSet(this.setTargetHumidity.bind(this));
 
-    // Force an immediate update to ensure HomeKit uses the new properties
+    // Force an immediate update to ensure HomeKit uses the new properties for both characteristics
     setTimeout(() => {
       const currentTargetHumidity = this.getTargetHumidity();
-      this.platform.log.debug('Forcing humidity characteristic update with value: %s', currentTargetHumidity);
+      const currentHumidity = this.getCurrentHumidity();
+      this.platform.log.debug('Forcing humidity characteristic updates - target: %s, current: %s', currentTargetHumidity, currentHumidity);
+
+      // Update both target (slider) and current (tile subtext) humidity characteristics
       this.humidifierService.updateCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold, currentTargetHumidity);
+      this.humidifierService.updateCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity, currentHumidity);
+      this.humidityService.updateCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity, currentHumidity);
     }, 1000);
 
     // Register handlers for Current Humidity characteristic
@@ -351,7 +356,9 @@ export class HumidifierAccessory extends BaseAccessory {
 
   getCurrentHumidity(): number {
     // Ensure current humidity is a proper integer for HomeKit display
-    return this.validateHumidityForHomeKit(this.currentHum);
+    const validated = this.validateHumidityForHomeKit(this.currentHum);
+    this.platform.log.debug('getCurrentHumidity() - raw: %s, validated: %s', this.currentHum, validated);
+    return validated;
   }
 
   setTargetHumidity(value: unknown): void {
