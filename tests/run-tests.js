@@ -26,6 +26,11 @@ const tests = [
     description: 'Tests HomeKit service name fix ("Humidifier" vs "Humidifier-Dehumidifier")',
   },
   {
+    name: 'Tile Display Fix',
+    file: 'test-tile-display.js',
+    description: 'Tests HomeKit tile display accuracy for current humidity values',
+  },
+  {
     name: 'Model Display Test',
     file: 'test-model-display.sh',
     description: 'Tests model name display (DR-HHM001S → DR-HM311S)',
