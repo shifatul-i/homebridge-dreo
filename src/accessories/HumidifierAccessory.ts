@@ -161,7 +161,8 @@ export class HumidifierAccessory extends BaseAccessory {
     // Set RelativeHumidityHumidifierThreshold
     // Note: HomeKit expects 0-100% range for display, but device only supports 30-90%
     // We handle the validation internally while allowing HomeKit to display the full range
-    this.humidifierService.getCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold)
+    const humidityCharacteristic = this.humidifierService.getCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold);
+    humidityCharacteristic
     .setProps({
       minValue: 0,
       maxValue: 100,
@@ -169,6 +170,13 @@ export class HumidifierAccessory extends BaseAccessory {
     })
     .onGet(this.getTargetHumidity.bind(this))
     .onSet(this.setTargetHumidity.bind(this));
+
+    // Force an immediate update to ensure HomeKit uses the new properties
+    setTimeout(() => {
+      const currentTargetHumidity = this.getTargetHumidity();
+      this.platform.log.debug('Forcing humidity characteristic update with value: %s', currentTargetHumidity);
+      this.humidifierService.updateCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold, currentTargetHumidity);
+    }, 1000);
 
     // Register handlers for Current Humidity characteristic
     this.humidifierService.getCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity)
@@ -380,7 +388,9 @@ export class HumidifierAccessory extends BaseAccessory {
         break;
     }
     // Return the actual device value for HomeKit to display correctly
-    return this.validateHumidityForHomeKit(threshold);
+    const validatedValue = this.validateHumidityForHomeKit(threshold);
+    this.platform.log.debug('GET TargetHumidity returning: %s (from device value: %s)', validatedValue, threshold);
+    return validatedValue;
   }
 
   // Can only be set in manual mode
