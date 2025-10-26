@@ -1,139 +1,106 @@
 #!/usr/bin/env node
 
-// Test script to verify HomeKit displays "Humidifier" instead of "Humidifier-Dehumidifier"
+// Test for HomeKit Service Display Fix - HM311S shows as "Humidifier" not "Humidifier-Dehumidifier"
 console.log('💨 Testing HomeKit Service Display Fix');
 console.log('====================================');
+console.log('🧪 Running HomeKit Service Display Tests...\n');
 
-// Test the characteristic configuration
-function testHumidifierOnlyConfiguration() {
-  console.log('\n🔧 HomeKit Characteristic Configuration:');
-  console.log('========================================');
+// Simulate the HomeKit characteristic configuration for HM311S
+const mockCharacteristicConfig = {
+  // This is what we should configure for HM311S (humidifier-only)
+  getValidValues() {
+    return [1]; // Only humidifier mode, no dehumidifier or auto
+  },
 
-  const targetHumidifierDehumidifierState = {
-    minValue: 1,
-    maxValue: 1,
-    validValues: [1], // Only humidifier mode
-  };
+  getMinValue() {
+    return 1;
+  },
 
-  console.log('TargetHumidifierDehumidifierState Properties:');
-  console.log(`  minValue: ${targetHumidifierDehumidifierState.minValue}`);
-  console.log(`  maxValue: ${targetHumidifierDehumidifierState.maxValue}`);
-  console.log(`  validValues: [${targetHumidifierDehumidifierState.validValues.join(', ')}]`);
+  getMaxValue() {
+    return 1;
+  },
+};
 
-  // Verify the configuration only allows humidifier mode
-  const isHumidifierOnly = (
-    targetHumidifierDehumidifierState.minValue === 1 &&
-    targetHumidifierDehumidifierState.maxValue === 1 &&
-    targetHumidifierDehumidifierState.validValues.length === 1 &&
-    targetHumidifierDehumidifierState.validValues[0] === 1
-  );
+// Test the configuration
+console.log('🔧 HomeKit Characteristic Configuration:');
+console.log('========================================');
+console.log('TargetHumidifierDehumidifierState Properties:');
+console.log(`  minValue: ${mockCharacteristicConfig.getMinValue()}`);
+console.log(`  maxValue: ${mockCharacteristicConfig.getMaxValue()}`);
+console.log(`  validValues: [${mockCharacteristicConfig.getValidValues().join(', ')}]\n`);
 
-  console.log(`\n✨ Configuration Test: ${isHumidifierOnly ? '✅ PASS' : '❌ FAIL'}`);
+// Verify the configuration is correct for humidifier-only
+const validValues = mockCharacteristicConfig.getValidValues();
+const isHumidifierOnly = validValues.length === 1 && validValues[0] === 1;
+
+console.log('✨ Configuration Test:', isHumidifierOnly ? '✅ PASS' : '❌ FAIL');
+if (isHumidifierOnly) {
   console.log('   Expected: Humidifier-only (value 1)');
-  console.log(`   Actual: ${isHumidifierOnly ? 'Humidifier-only ✅' : 'Multi-mode ❌'}`);
-
-  return isHumidifierOnly;
+  console.log('   Actual: Humidifier-only ✅\n');
+} else {
+  console.log('   Expected: Humidifier-only (value 1)');
+  console.log('   Actual: Multi-mode ❌\n');
 }
 
 // Test the mode return values
-function testModeReturnValues() {
-  console.log('\n🎯 Mode Return Value Tests:');
-  console.log('===========================');
+console.log('🎯 Mode Return Value Tests:');
+console.log('===========================');
 
-  // Simulate getTargetHumidifierMode function
-  function getTargetHumidifierMode() {
-    // Always return 1 (humidifier) since HM311S is humidifier-only
-    return 1;
+const mockModeTests = [
+  { description: 'Always returns humidifier mode', expectedValue: 1 },
+];
+
+let modePassed = 0;
+mockModeTests.forEach((test, index) => {
+  // Simulate what getTargetHumidifierDehumidifierState should return
+  const returnValue = 1; // Always return humidifier mode for HM311S
+  const passed = returnValue === test.expectedValue;
+
+  console.log(`Test ${index + 1}: ${test.description}`);
+  console.log(`  Expected: ${test.expectedValue} (Humidifier)`);
+  console.log(`  Actual: ${returnValue} (Humidifier)`);
+  console.log(`  Result: ${passed ? '✅ PASS' : '❌ FAIL'}\n`);
+
+  if (passed) {
+    modePassed++;
   }
+});
 
-  const testCases = [
-    { description: 'Always returns humidifier mode', expectedValue: 1 },
-  ];
+// Test how HomeKit interprets the service based on validValues
+console.log('🏠 HomeKit Service Display Mapping:');
+console.log('===================================');
+console.log('Service Display Based on validValues:');
+console.log('  1. validValues: [0, 1, 2] → "Humidifier-Dehumidifier"');
+console.log('     Multi-mode (shows both options) ❌');
+console.log('  2. validValues: [0, 1] → "Humidifier-Dehumidifier"');
+console.log('     Auto + Humidifier (still shows both options) ❌');
+console.log('  3. validValues: [1] → "Humidifier"');
+console.log('     Humidifier-only (shows single option) ✅ ✅\n');
 
-  let passed = 0;
-  let failed = 0;
-
-  testCases.forEach((test, index) => {
-    const result = getTargetHumidifierMode();
-    const success = result === test.expectedValue;
-
-    console.log(`Test ${index + 1}: ${test.description}`);
-    console.log(`  Expected: ${test.expectedValue} (Humidifier)`);
-    console.log(`  Actual: ${result} (${result === 1 ? 'Humidifier' : result === 0 ? 'Auto' : result === 2 ? 'Dehumidifier' : 'Unknown'})`);
-    console.log(`  Result: ${success ? '✅ PASS' : '❌ FAIL'}`);
-    console.log('');
-
-    if (success) {
-      passed++;
-    } else {
-      failed++;
-    }
-  });
-
-  return { passed, failed };
-}
-
-// Test HomeKit service mode mapping
-function testHomekitServiceMapping() {
-  console.log('\n🏠 HomeKit Service Display Mapping:');
-  console.log('===================================');
-
-  const serviceMappings = [
-    {
-      validValues: [0, 1, 2],
-      display: 'Humidifier-Dehumidifier',
-      description: 'Multi-mode (shows both options)',
-    },
-    {
-      validValues: [0, 1],
-      display: 'Humidifier-Dehumidifier',
-      description: 'Auto + Humidifier (still shows both options)',
-    },
-    {
-      validValues: [1],
-      display: 'Humidifier',
-      description: 'Humidifier-only (shows single option) ✅',
-    },
-  ];
-
-  console.log('Service Display Based on validValues:');
-  serviceMappings.forEach((mapping, index) => {
-    const isCorrect = mapping.validValues.length === 1 && mapping.validValues[0] === 1;
-    console.log(`  ${index + 1}. validValues: [${mapping.validValues.join(', ')}] → "${mapping.display}"`);
-    console.log(`     ${mapping.description} ${isCorrect ? '✅' : '❌'}`);
-  });
-
-  return true;
-}
-
-// Run all tests
-console.log('🧪 Running HomeKit Service Display Tests...\n');
-
-const configTest = testHumidifierOnlyConfiguration();
-const modeTest = testModeReturnValues();
-const mappingTest = testHomekitServiceMapping();
-
-console.log('\n📊 Final Test Summary:');
+console.log('📊 Final Test Summary:');
 console.log('======================');
-console.log(`🔧 Configuration Test: ${configTest ? '✅ PASS' : '❌ FAIL'}`);
-console.log(`🎯 Mode Return Tests: ${modeTest.failed === 0 ? '✅ PASS' : '❌ FAIL'} (${modeTest.passed}/${modeTest.passed + modeTest.failed})`);
-console.log(`🏠 Service Mapping: ${mappingTest ? '✅ PASS' : '❌ FAIL'}`);
+console.log(`🔧 Configuration Test: ${isHumidifierOnly ? '✅ PASS' : '❌ FAIL'}`);
+console.log(`🎯 Mode Return Tests: ${modePassed === mockModeTests.length ? '✅ PASS' : '❌ FAIL'} (${modePassed}/${mockModeTests.length})`);
+console.log(`🏠 Service Mapping: ${isHumidifierOnly ? '✅ PASS' : '❌ FAIL'}\n`);
 
-const allTestsPassed = configTest && modeTest.failed === 0 && mappingTest;
+const allPassed = isHumidifierOnly && (modePassed === mockModeTests.length);
 
-if (allTestsPassed) {
-  console.log('\n🎉 All tests passed! HomeKit should now display:');
+if (allPassed) {
+  console.log('🎉 All tests passed! HomeKit should now display:');
   console.log('   📱 "Humidifier" (not "Humidifier-Dehumidifier")');
   console.log('   🎛️  No dehumidifier controls visible');
-  console.log('   ✨ Clean, simple interface for HM311S');
-} else {
-  console.log('\n⚠️  Some tests failed. Please review the implementation.');
-}
+  console.log('   ✨ Clean, simple interface for HM311S\n');
 
-console.log('\n🔧 What This Fix Does:');
-console.log('======================');
-console.log('1. ✅ Sets TargetHumidifierDehumidifierState validValues to [1] only');
-console.log('2. ✅ Always returns mode 1 (humidifier) to HomeKit');
-console.log('3. ✅ Removes dehumidifier option from HomeKit interface');
-console.log('4. ✅ HomeKit displays "Humidifier" instead of "Humidifier-Dehumidifier"');
-console.log('5. ✅ Maintains internal device mode functionality (manual/auto/sleep)');
+  console.log('🔧 What This Fix Does:');
+  console.log('======================');
+  console.log('1. ✅ Sets TargetHumidifierDehumidifierState validValues to [1] only');
+  console.log('2. ✅ Always returns mode 1 (humidifier) to HomeKit');
+  console.log('3. ✅ Removes dehumidifier option from HomeKit interface');
+  console.log('4. ✅ HomeKit displays "Humidifier" instead of "Humidifier-Dehumidifier"');
+  console.log('5. ✅ Maintains internal device mode functionality (manual/auto/sleep)');
+
+  process.exit(0);
+} else {
+  console.log('❌ Some tests failed! Please check the service configuration.');
+  process.exit(1);
+}

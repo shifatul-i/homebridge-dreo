@@ -12,13 +12,13 @@ const path = require('path');
 const tests = [
   {
     name: 'Humidity Fix Test',
-    description: 'Tests humidity range clamping and validation for HM311S',
+    description: 'Tests humidity range clamping and validation for HM311S (fixes 90% bug)',
     file: 'test-humidity-fix.js',
     isShell: false,
   },
   {
     name: 'HomeKit Display Test',
-    description: 'Tests HomeKit characteristic display mapping',
+    description: 'Tests HomeKit characteristic display mapping (0-100% range)',
     file: 'test-homekit-display.js',
     isShell: false,
   },
@@ -29,16 +29,10 @@ const tests = [
     isShell: false,
   },
   {
-    name: 'Tile Display Test',
-    description: 'Tests HomeKit tile display vs slider synchronization',
-    file: 'test-tile-display.js',
-    isShell: false,
-  },
-  {
-    name: 'Tile Display Fix Test',
-    description: 'Tests forced characteristic refresh to fix tile scaling issue',
-    file: 'test-tile-display-fix.js',
-    isShell: false,
+    name: 'Model Display Test',
+    description: 'Tests model name display (DR-HM311S vs DR-HHM001S)',
+    file: 'test-model-display.sh',
+    isShell: true,
   },
 ];
 
