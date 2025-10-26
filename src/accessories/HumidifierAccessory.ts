@@ -89,8 +89,8 @@ export class HumidifierAccessory extends BaseAccessory {
     this.wrong = state.wrong?.state ?? 0;
     this.manualFogLevel = state.foglevel?.state ?? 0;
     // Ensure humidity levels are within HomeKit valid range
-    this.targetHumAutoLevel = Math.max(MIN_HUMIDITY, Math.min(MAX_HUMIDITY, state.rhautolevel?.state ?? DEFAULT_HUMIDITY));
-    this.targetHumSleepLevel = Math.max(MIN_HUMIDITY, Math.min(MAX_HUMIDITY, state.rhsleeplevel?.state ?? DEFAULT_HUMIDITY));
+    this.targetHumAutoLevel = this.validateHumidityValue(state.rhautolevel?.state);
+    this.targetHumSleepLevel = this.validateHumidityValue(state.rhsleeplevel?.state);
 
     this.currState = this.on ? (this.suspended ? 1 : 2) : 0;
 
@@ -168,6 +168,7 @@ export class HumidifierAccessory extends BaseAccessory {
       minValue: MIN_HUMIDITY,
       maxValue: MAX_HUMIDITY,
       minStep: 1,
+      validValues: Array.from({length: MAX_HUMIDITY - MIN_HUMIDITY + 1}, (_, i) => MIN_HUMIDITY + i),
     })
     .onGet(this.getTargetHumidity.bind(this))
     .onSet(this.setTargetHumidity.bind(this));
@@ -202,6 +203,27 @@ export class HumidifierAccessory extends BaseAccessory {
         this.platform.log.error('Failed to parse incoming message: %s', error);
       }
     });
+  }
+
+  // Helper function to ensure humidity values are within valid HomeKit range and properly formatted
+  private validateHumidityValue(value: any): number {
+    const MIN_HUMIDITY = 30;
+    const MAX_HUMIDITY = 90;
+    const DEFAULT_HUMIDITY = 45;
+
+    // Handle null and undefined explicitly
+    if (value === null || value === undefined) {
+      return DEFAULT_HUMIDITY;
+    }
+
+    const numValue = Number(value);
+    if (isNaN(numValue)) {
+      return DEFAULT_HUMIDITY;
+    }
+
+    // Ensure integer value within valid range
+    const intValue = Math.round(numValue);
+    return Math.max(MIN_HUMIDITY, Math.min(MAX_HUMIDITY, intValue));
   }
 
   getActive(): boolean {
@@ -301,17 +323,17 @@ export class HumidifierAccessory extends BaseAccessory {
   }
 
   setTargetHumidity(value: unknown): void {
-    // Ensure integer value for HomeKit
-    const targetValue = Math.max(MIN_HUMIDITY, Math.min(MAX_HUMIDITY, Math.round(Number(value))));
+    // Ensure integer value for HomeKit with proper validation
+    const targetValue = this.validateHumidityValue(Number(value));
     if (this.dreoMode === 0) { // manual
-      this.platform.log.warn('ERROR: Triggered SET TargetHumidity (Manual): %s', Number(value));
+      this.platform.log.warn('ERROR: Triggered SET TargetHumidity (Manual): %s', targetValue);
     } else if (this.dreoMode === 1) { // auto
       this.targetHumAutoLevel = targetValue;
-      this.platform.log.debug('Triggered SET TargetHumidity (Auto): %s', value);
+      this.platform.log.debug('Triggered SET TargetHumidity (Auto): %s', targetValue);
       this.platform.webHelper.control(this.sn, {'rhautolevel': this.targetHumAutoLevel});
     } else if (this.dreoMode === 2) { // sleep
       this.targetHumSleepLevel = targetValue;
-      this.platform.log.debug('Triggered SET TargetHumidity (Sleep): %s', value);
+      this.platform.log.debug('Triggered SET TargetHumidity (Sleep): %s', targetValue);
       this.platform.webHelper.control(this.sn, {'rhsleeplevel': this.targetHumSleepLevel});
     }
   }
@@ -329,12 +351,12 @@ export class HumidifierAccessory extends BaseAccessory {
         break;
       default: // manual do not have a target humidity, it has fog level
         // return the threshold for Auto mode as a sensible default when manual is active
-        threshold = this.targetHumAutoLevel || DEFAULT_HUMIDITY;
+        threshold = this.targetHumAutoLevel;
         this.platform.log.debug('Triggered GET TargetHumidity (Manual - Returning Auto Level): %s', threshold);
         break;
     }
-    // Always return integer for HomeKit
-    return Math.max(MIN_HUMIDITY, Math.min(MAX_HUMIDITY, Math.round(threshold || DEFAULT_HUMIDITY)));
+    // Always return validated integer for HomeKit
+    return this.validateHumidityValue(threshold);
   }
 
   // Can only be set in manual mode
@@ -438,7 +460,7 @@ export class HumidifierAccessory extends BaseAccessory {
         this.targetHumAutoLevel = reported.rhautolevel ?? this.targetHumAutoLevel;
         this.platform.log.debug('Humidifier targetHumAutoLevel: %s', this.targetHumAutoLevel);
         if (this.dreoMode === 1) {
-          const valueToUpdate = Math.max(MIN_HUMIDITY, Math.min(MAX_HUMIDITY, Math.round(this.targetHumAutoLevel || DEFAULT_HUMIDITY)));
+          const valueToUpdate = this.validateHumidityValue(this.targetHumAutoLevel);
           this.humidifierService
           .updateCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold, valueToUpdate);
         }
@@ -447,7 +469,7 @@ export class HumidifierAccessory extends BaseAccessory {
         this.targetHumSleepLevel = reported.rhsleeplevel ?? this.targetHumSleepLevel;
         this.platform.log.debug('Humidifier targetHumSleepLevel: %s', this.targetHumSleepLevel);
         if (this.dreoMode === 2) {
-          const valueToUpdate = Math.max(MIN_HUMIDITY, Math.min(MAX_HUMIDITY, Math.round(this.targetHumSleepLevel || DEFAULT_HUMIDITY)));
+          const valueToUpdate = this.validateHumidityValue(this.targetHumSleepLevel);
           this.humidifierService
           .updateCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold, valueToUpdate);
         }
