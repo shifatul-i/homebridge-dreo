@@ -159,13 +159,12 @@ export class HumidifierAccessory extends BaseAccessory {
     .onSet(this.setTargetHumidifierMode.bind(this));
 
     // Set RelativeHumidityHumidifierThreshold
-    // Note: HomeKit expects 0-100% range for display, but device only supports 30-90%
-    // We handle the validation internally while allowing HomeKit to display the full range
+    // HomeKit range matches device capabilities (30-90%) for clearer user interface
     const humidityCharacteristic = this.humidifierService.getCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold);
     humidityCharacteristic
     .setProps({
-      minValue: 0,
-      maxValue: 100,
+      minValue: 30,
+      maxValue: 90,
       minStep: 1,
     })
     .onGet(this.getTargetHumidity.bind(this))
