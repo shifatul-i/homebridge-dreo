@@ -89,8 +89,8 @@ export class HumidifierAccessory extends BaseAccessory {
     this.wrong = state.wrong?.state ?? 0;
     this.manualFogLevel = state.foglevel?.state ?? 0;
     // Ensure humidity levels are within HomeKit valid range
-    this.targetHumAutoLevel = this.validateHumidityValue(state.rhautolevel?.state);
-    this.targetHumSleepLevel = this.validateHumidityValue(state.rhsleeplevel?.state);
+    this.targetHumAutoLevel = this.clampHumidityForDevice(state.rhautolevel?.state);
+    this.targetHumSleepLevel = this.clampHumidityForDevice(state.rhsleeplevel?.state);
 
     this.currState = this.on ? (this.suspended ? 1 : 2) : 0;
 
@@ -148,27 +148,24 @@ export class HumidifierAccessory extends BaseAccessory {
     .onGet(this.getCurrentHumidifierWaterLevel.bind(this));
 
     // Register handlers for Target Humidifier Mode characteristic
-    /**
-     * 0: Auto (Dero Manual)
-     * 1: Humidifier (Dero Auto)
-     * 2: Dehumidifier (Dero Sleep)
-     */
+    // HM311S is humidifier-only, so only expose humidifier mode (1) to avoid "Humidifier-Dehumidifier" display
     this.humidifierService.getCharacteristic(this.platform.Characteristic.TargetHumidifierDehumidifierState)
     .setProps({
-      minValue: 0,
+      minValue: 1,
       maxValue: 1,
-      validValues: [0, 1],
+      validValues: [1], // Only humidifier mode - this makes HomeKit show just "Humidifier"
     })
     .onGet(this.getTargetHumidifierMode.bind(this))
     .onSet(this.setTargetHumidifierMode.bind(this));
 
     // Set RelativeHumidityHumidifierThreshold
+    // Note: HomeKit expects 0-100% range for display, but device only supports 30-90%
+    // We handle the validation internally while allowing HomeKit to display the full range
     this.humidifierService.getCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold)
     .setProps({
-      minValue: MIN_HUMIDITY,
-      maxValue: MAX_HUMIDITY,
+      minValue: 0,
+      maxValue: 100,
       minStep: 1,
-      validValues: Array.from({length: MAX_HUMIDITY - MIN_HUMIDITY + 1}, (_, i) => MIN_HUMIDITY + i),
     })
     .onGet(this.getTargetHumidity.bind(this))
     .onSet(this.setTargetHumidity.bind(this));
@@ -205,8 +202,8 @@ export class HumidifierAccessory extends BaseAccessory {
     });
   }
 
-  // Helper function to ensure humidity values are within valid HomeKit range and properly formatted
-  private validateHumidityValue(value: any): number {
+  // Helper function to clamp humidity values to device capabilities when setting values
+  private clampHumidityForDevice(value: any): number {
     const MIN_HUMIDITY = 30;
     const MAX_HUMIDITY = 90;
     const DEFAULT_HUMIDITY = 45;
@@ -221,9 +218,27 @@ export class HumidifierAccessory extends BaseAccessory {
       return DEFAULT_HUMIDITY;
     }
 
-    // Ensure integer value within valid range
+    // Ensure integer value within device's valid range (30-90%)
     const intValue = Math.round(numValue);
     return Math.max(MIN_HUMIDITY, Math.min(MAX_HUMIDITY, intValue));
+  }
+
+  // Helper function to validate humidity values for HomeKit display (allows actual device values)
+  private validateHumidityForHomeKit(value: any): number {
+    const DEFAULT_HUMIDITY = 45;
+
+    // Handle null and undefined explicitly
+    if (value === null || value === undefined) {
+      return DEFAULT_HUMIDITY;
+    }
+
+    const numValue = Number(value);
+    if (isNaN(numValue)) {
+      return DEFAULT_HUMIDITY;
+    }
+
+    // Just ensure it's an integer - let HomeKit display the actual device value
+    return Math.round(numValue);
   }
 
   getActive(): boolean {
@@ -310,12 +325,20 @@ export class HumidifierAccessory extends BaseAccessory {
 
   setTargetHumidifierMode(value: unknown): void {
     this.platform.log.debug('Triggered SET TargetHumidifierState: %s', value);
-    this.dreoMode = Number(value);
-    this.platform.webHelper.control(this.sn, {'mode': this.dreoMode});
+    // Since we only expose humidifier mode (1), this should always be 1
+    // But we still respect the user's device mode for internal operations
+    if (Number(value) === 1) {
+      // User is setting humidifier mode - we'll keep current dreoMode
+      // This allows the device's internal modes (manual/auto/sleep) to work
+      // while presenting a simple "humidifier" interface to HomeKit
+      this.platform.log.debug('Humidifier mode confirmed (internal dreoMode: %s)', this.dreoMode);
+    }
   }
 
   getTargetHumidifierMode(): number {
-    return this.dreoMode === 2 ? 1 : this.dreoMode;
+    // Always return 1 (humidifier) since HM311S is humidifier-only
+    // This ensures HomeKit displays "Humidifier" instead of "Humidifier-Dehumidifier"
+    return 1;
   }
 
   getCurrentHumidity(): number {
@@ -323,8 +346,8 @@ export class HumidifierAccessory extends BaseAccessory {
   }
 
   setTargetHumidity(value: unknown): void {
-    // Ensure integer value for HomeKit with proper validation
-    const targetValue = this.validateHumidityValue(Number(value));
+    // Clamp value to device capabilities (30-90%) when setting
+    const targetValue = this.clampHumidityForDevice(Number(value));
     if (this.dreoMode === 0) { // manual
       this.platform.log.warn('ERROR: Triggered SET TargetHumidity (Manual): %s', targetValue);
     } else if (this.dreoMode === 1) { // auto
@@ -355,8 +378,8 @@ export class HumidifierAccessory extends BaseAccessory {
         this.platform.log.debug('Triggered GET TargetHumidity (Manual - Returning Auto Level): %s', threshold);
         break;
     }
-    // Always return validated integer for HomeKit
-    return this.validateHumidityValue(threshold);
+    // Return the actual device value for HomeKit to display correctly
+    return this.validateHumidityForHomeKit(threshold);
   }
 
   // Can only be set in manual mode
@@ -460,7 +483,7 @@ export class HumidifierAccessory extends BaseAccessory {
         this.targetHumAutoLevel = reported.rhautolevel ?? this.targetHumAutoLevel;
         this.platform.log.debug('Humidifier targetHumAutoLevel: %s', this.targetHumAutoLevel);
         if (this.dreoMode === 1) {
-          const valueToUpdate = this.validateHumidityValue(this.targetHumAutoLevel);
+          const valueToUpdate = this.validateHumidityForHomeKit(this.targetHumAutoLevel);
           this.humidifierService
           .updateCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold, valueToUpdate);
         }
@@ -469,7 +492,7 @@ export class HumidifierAccessory extends BaseAccessory {
         this.targetHumSleepLevel = reported.rhsleeplevel ?? this.targetHumSleepLevel;
         this.platform.log.debug('Humidifier targetHumSleepLevel: %s', this.targetHumSleepLevel);
         if (this.dreoMode === 2) {
-          const valueToUpdate = this.validateHumidityValue(this.targetHumSleepLevel);
+          const valueToUpdate = this.validateHumidityForHomeKit(this.targetHumSleepLevel);
           this.humidifierService
           .updateCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold, valueToUpdate);
         }
