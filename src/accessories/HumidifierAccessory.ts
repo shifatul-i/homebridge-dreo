@@ -342,7 +342,8 @@ export class HumidifierAccessory extends BaseAccessory {
   }
 
   getCurrentHumidity(): number {
-    return this.currentHum;
+    // Ensure current humidity is a proper integer for HomeKit display
+    return this.validateHumidityForHomeKit(this.currentHum);
   }
 
   setTargetHumidity(value: unknown): void {
@@ -459,8 +460,10 @@ export class HumidifierAccessory extends BaseAccessory {
       case 'rh':
         this.currentHum = reported.rh ?? this.currentHum;
         this.platform.log.debug('Humidifier humidity: %s', this.currentHum);
-        this.humidifierService.updateCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity, this.currentHum);
-        this.humidityService.updateCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity, this.currentHum);
+        // Validate current humidity for HomeKit display consistency
+        const validatedCurrentHum = this.validateHumidityForHomeKit(this.currentHum);
+        this.humidifierService.updateCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity, validatedCurrentHum);
+        this.humidityService.updateCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity, validatedCurrentHum);
         break;
       case 'hotfogon':
         this.fogHot = reported.hotfogon ?? this.fogHot;
