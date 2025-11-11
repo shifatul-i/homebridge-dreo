@@ -8,15 +8,18 @@ interface DreoStateReport {
   mode?: number;          // Mode 0-2 [manual, auto, sleep]
   suspend?: boolean;      // Suspended
   rh?: number;            // Current humidity
-  hotfogon?: boolean;     // Hot fog on
+  hotfogon?: boolean;     // Hot fog on (not available on all models)
   foglevel?: number;      // Fog level 0-6 [0: off, 1-6: levels]
   rhautolevel?: number;   // Target humidity level in auto mode
   rhsleeplevel?: number;  // Target humidity level in sleep mode
   ledlevel?: number;      // LED indicator level 0-2 [off, low, high]
-  rgblevel?: string;      // RGB display level 0-2 [off, low, high]
+  rgblevel?: string | number;  // RGB display level 0-2 [off, low, high]
   muteon?: boolean;       // Beep on/off
   wrong?: number;         // Error code 0-1 [0: no error, 1: no water]
   worktime?: number;      // Work time in minutes after last cleaning
+  filtertime?: number;    // Filter life percentage remaining
+  mcuon?: boolean;        // MCU status
+  connected?: boolean;    // Connection status
 }
 
 interface DreoMessage {
@@ -30,9 +33,9 @@ interface DreoState {
   mode: {state: number};
   suspend: {state: boolean};
   rh: {state: number};
-  hotfogon: {state: boolean};
+  hotfogon?: {state: boolean};  // Optional - not available on all models
   ledlevel: {state: number};
-  rgblevel: {state: string};
+  rgblevel: {state: string | number};  // Can be string or number depending on model
   foglevel: {state: number};
   rhautolevel: {state: number};
   rhsleeplevel: {state: number};
@@ -48,11 +51,11 @@ export class HumidifierAccessory extends BaseAccessory {
   private readonly humidifierService: Service;
   private readonly humidityService: Service;
   private readonly sleepSwitchService: Service;
-  private readonly hotFogSwitchService: Service;
+  private readonly hotFogSwitchService?: Service;  // Optional - not all models support hot fog
 
   // Cached copy of latest device states
   private on: boolean;        // poweron
-  private deroMode: number;   // mode 0-2       [manual, auto, sleep]
+  private dreoMode: number;   // mode 0-2       [manual, auto, sleep]
   private suspended: boolean; // suspend
   private currentHum: number; // rh
   private fogHot: boolean;    // hotfogon
@@ -77,16 +80,17 @@ export class HumidifierAccessory extends BaseAccessory {
 
     // Update current state in homebridge from Dreo API
     this.on = state.poweron?.state ?? false;
-    this.deroMode = state.mode?.state ?? 0;
+    this.dreoMode = state.mode?.state ?? 0;
     this.suspended = state.suspend?.state ?? false;
     this.currentHum = state.rh?.state ?? 0;
     this.fogHot = state.hotfogon?.state ?? false;
     this.ledLevel = state.ledlevel?.state ?? 0;
-    this.rgbLevel = state.rgblevel?.state ?? '0';
+    this.rgbLevel = String(state.rgblevel?.state ?? '0');  // Convert to string for consistency
     this.wrong = state.wrong?.state ?? 0;
     this.manualFogLevel = state.foglevel?.state ?? 0;
-    this.targetHumAutoLevel = state.rhautolevel?.state ?? DEFAULT_HUMIDITY;
-    this.targetHumSleepLevel = state.rhsleeplevel?.state ?? DEFAULT_HUMIDITY;
+    // Ensure humidity levels are within HomeKit valid range
+    this.targetHumAutoLevel = this.clampHumidityForDevice(state.rhautolevel?.state);
+    this.targetHumSleepLevel = this.clampHumidityForDevice(state.rhsleeplevel?.state);
 
     this.currState = this.on ? (this.suspended ? 1 : 2) : 0;
 
@@ -100,8 +104,12 @@ export class HumidifierAccessory extends BaseAccessory {
     // Get the Switch service if it exists, otherwise create a new Switch service
     this.sleepSwitchService = this.accessory.getServiceById(this.platform.Service.Switch, 'SleepMode') ||
       this.accessory.addService(this.platform.Service.Switch, 'Sleep Mode', 'SleepMode');
-    this.hotFogSwitchService = this.accessory.getServiceById(this.platform.Service.Switch, 'HotFog') ||
-      this.accessory.addService(this.platform.Service.Switch, 'Warm Mist', 'HotFog');
+
+    // Only create Hot Fog switch if the device supports it (some models like HM311S don't have this feature)
+    if (state.hotfogon !== undefined) {
+      this.hotFogSwitchService = this.accessory.getServiceById(this.platform.Service.Switch, 'HotFog') ||
+        this.accessory.addService(this.platform.Service.Switch, 'Warm Mist', 'HotFog');
+    }
 
     // ON / OFF
     // Register handlers for the Humidifier Active characteristic
@@ -111,9 +119,13 @@ export class HumidifierAccessory extends BaseAccessory {
     this.sleepSwitchService.getCharacteristic(this.platform.Characteristic.On)
     .onGet(this.getSleepMode.bind(this))
     .onSet(this.setSleepMode.bind(this));
-    this.hotFogSwitchService.getCharacteristic(this.platform.Characteristic.On)
-    .onGet(this.getHotFog.bind(this))
-    .onSet(this.setHotFog.bind(this));
+
+    // Only register Hot Fog handlers if the service exists (device supports it)
+    if (this.hotFogSwitchService) {
+      this.hotFogSwitchService.getCharacteristic(this.platform.Characteristic.On)
+      .onGet(this.getHotFog.bind(this))
+      .onSet(this.setHotFog.bind(this));
+    }
 
     // Register handlers for Current Humidifier State characteristic
     // Disabling dehumidifying as it is not supported
@@ -136,29 +148,39 @@ export class HumidifierAccessory extends BaseAccessory {
     .onGet(this.getCurrentHumidifierWaterLevel.bind(this));
 
     // Register handlers for Target Humidifier Mode characteristic
-    /**
-     * 0: Auto (Dero Manual)
-     * 1: Humidifier (Dero Auto)
-     * 2: Dehumidifier (Dero Sleep)
-     */
+    // HM311S is humidifier-only, so only expose humidifier mode (1) to avoid "Humidifier-Dehumidifier" display
     this.humidifierService.getCharacteristic(this.platform.Characteristic.TargetHumidifierDehumidifierState)
     .setProps({
-      minValue: 0,
+      minValue: 1,
       maxValue: 1,
-      validValues: [0, 1],
+      validValues: [1], // Only humidifier mode - this makes HomeKit show just "Humidifier"
     })
     .onGet(this.getTargetHumidifierMode.bind(this))
     .onSet(this.setTargetHumidifierMode.bind(this));
 
     // Set RelativeHumidityHumidifierThreshold
-    this.humidifierService.getCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold)
+    // HomeKit range matches device capabilities (30-90%) for clearer user interface
+    const humidityCharacteristic = this.humidifierService.getCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold);
+    humidityCharacteristic
     .setProps({
-      minValue: MIN_HUMIDITY,
-      maxValue: MAX_HUMIDITY,
+      minValue: 30,
+      maxValue: 90,
       minStep: 1,
     })
     .onGet(this.getTargetHumidity.bind(this))
     .onSet(this.setTargetHumidity.bind(this));
+
+    // Force an immediate update to ensure HomeKit uses the new properties for both characteristics
+    setTimeout(() => {
+      const currentTargetHumidity = this.getTargetHumidity();
+      const currentHumidity = this.getCurrentHumidity();
+      this.platform.log.debug('Forcing humidity characteristic updates - target: %s, current: %s', currentTargetHumidity, currentHumidity);
+
+      // Update both target (slider) and current (tile subtext) humidity characteristics
+      this.humidifierService.updateCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold, currentTargetHumidity);
+      this.humidifierService.updateCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity, currentHumidity);
+      this.humidityService.updateCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity, currentHumidity);
+    }, 1000);
 
     // Register handlers for Current Humidity characteristic
     this.humidifierService.getCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity)
@@ -192,6 +214,45 @@ export class HumidifierAccessory extends BaseAccessory {
     });
   }
 
+  // Helper function to clamp humidity values to device capabilities when setting values
+  private clampHumidityForDevice(value: any): number {
+    const MIN_HUMIDITY = 30;
+    const MAX_HUMIDITY = 90;
+    const DEFAULT_HUMIDITY = 45;
+
+    // Handle null and undefined explicitly
+    if (value === null || value === undefined) {
+      return DEFAULT_HUMIDITY;
+    }
+
+    const numValue = Number(value);
+    if (isNaN(numValue)) {
+      return DEFAULT_HUMIDITY;
+    }
+
+    // Ensure integer value within device's valid range (30-90%)
+    const intValue = Math.round(numValue);
+    return Math.max(MIN_HUMIDITY, Math.min(MAX_HUMIDITY, intValue));
+  }
+
+  // Helper function to validate humidity values for HomeKit display (allows actual device values)
+  private validateHumidityForHomeKit(value: any): number {
+    const DEFAULT_HUMIDITY = 45;
+
+    // Handle null and undefined explicitly
+    if (value === null || value === undefined) {
+      return DEFAULT_HUMIDITY;
+    }
+
+    const numValue = Number(value);
+    if (isNaN(numValue)) {
+      return DEFAULT_HUMIDITY;
+    }
+
+    // Just ensure it's an integer - let HomeKit display the actual device value
+    return Math.round(numValue);
+  }
+
   getActive(): boolean {
     return this.on;
   }
@@ -210,7 +271,7 @@ export class HumidifierAccessory extends BaseAccessory {
   }
 
   getSleepMode(): boolean {
-    return this.on && this.deroMode === 2;
+    return this.on && this.dreoMode === 2;
   }
 
   setSleepMode(value: unknown): void {
@@ -218,20 +279,20 @@ export class HumidifierAccessory extends BaseAccessory {
     const isSleepMode = Boolean(value);
     let command: {};
     if (isSleepMode) {
-      this.deroMode = 2;
+      this.dreoMode = 2;
       if (this.on) {
-        command = {'mode': this.deroMode};
+        command = {'mode': this.dreoMode};
       } else {
         this.on = true;
-        command = {'poweron': true, 'mode': this.deroMode}; // Power on the humidifier
+        command = {'poweron': true, 'mode': this.dreoMode}; // Power on the humidifier
         this.humidifierService.updateCharacteristic(this.platform.Characteristic.Active, true);
       }
       setTimeout(() => {
         this.humidifierService.updateCharacteristic(this.platform.Characteristic.TargetHumidifierDehumidifierState, 1);
       }, 750);
     } else { // Run this only if the humidifier is on
-      this.deroMode = 0;
-      command = {'mode': this.deroMode};
+      this.dreoMode = 0;
+      command = {'mode': this.dreoMode};
       if (this.on) {
         setTimeout(() => {
           this.humidifierService.updateCharacteristic(this.platform.Characteristic.TargetHumidifierDehumidifierState, 0);
@@ -246,6 +307,12 @@ export class HumidifierAccessory extends BaseAccessory {
   }
 
   setHotFog(value: unknown): void {
+    // Only proceed if this device supports hot fog
+    if (!this.hotFogSwitchService) {
+      this.platform.log.warn('Hot fog feature not supported on this model');
+      return;
+    }
+
     this.platform.log.debug('Triggered SET HotFog: %s', value);
     this.fogHot = Boolean(value);
     let command: {};
@@ -270,37 +337,48 @@ export class HumidifierAccessory extends BaseAccessory {
 
   setTargetHumidifierMode(value: unknown): void {
     this.platform.log.debug('Triggered SET TargetHumidifierState: %s', value);
-    this.deroMode = Number(value);
-    this.platform.webHelper.control(this.sn, {'mode': this.deroMode});
+    // Since we only expose humidifier mode (1), this should always be 1
+    // But we still respect the user's device mode for internal operations
+    if (Number(value) === 1) {
+      // User is setting humidifier mode - we'll keep current dreoMode
+      // This allows the device's internal modes (manual/auto/sleep) to work
+      // while presenting a simple "humidifier" interface to HomeKit
+      this.platform.log.debug('Humidifier mode confirmed (internal dreoMode: %s)', this.dreoMode);
+    }
   }
 
   getTargetHumidifierMode(): number {
-    return this.deroMode === 2 ? 1 : this.deroMode;
+    // Always return 1 (humidifier) since HM311S is humidifier-only
+    // This ensures HomeKit displays "Humidifier" instead of "Humidifier-Dehumidifier"
+    return 1;
   }
 
   getCurrentHumidity(): number {
-    return this.currentHum;
+    // Ensure current humidity is a proper integer for HomeKit display
+    const validated = this.validateHumidityForHomeKit(this.currentHum);
+    this.platform.log.debug('getCurrentHumidity() - raw: %s, validated: %s', this.currentHum, validated);
+    return validated;
   }
 
   setTargetHumidity(value: unknown): void {
-    // Ensure integer value for HomeKit
-    const targetValue = Math.max(MIN_HUMIDITY, Math.min(MAX_HUMIDITY, Math.round(Number(value))));
-    if (this.deroMode === 0) { // manual
-      this.platform.log.warn('ERROR: Triggered SET TargetHumidity (Manual): %s', Number(value));
-    } else if (this.deroMode === 1) { // auto
+    // Clamp value to device capabilities (30-90%) when setting
+    const targetValue = this.clampHumidityForDevice(Number(value));
+    if (this.dreoMode === 0) { // manual
+      this.platform.log.warn('ERROR: Triggered SET TargetHumidity (Manual): %s', targetValue);
+    } else if (this.dreoMode === 1) { // auto
       this.targetHumAutoLevel = targetValue;
-      this.platform.log.debug('Triggered SET TargetHumidity (Auto): %s', value);
+      this.platform.log.debug('Triggered SET TargetHumidity (Auto): %s', targetValue);
       this.platform.webHelper.control(this.sn, {'rhautolevel': this.targetHumAutoLevel});
-    } else if (this.deroMode === 2) { // sleep
+    } else if (this.dreoMode === 2) { // sleep
       this.targetHumSleepLevel = targetValue;
-      this.platform.log.debug('Triggered SET TargetHumidity (Sleep): %s', value);
+      this.platform.log.debug('Triggered SET TargetHumidity (Sleep): %s', targetValue);
       this.platform.webHelper.control(this.sn, {'rhsleeplevel': this.targetHumSleepLevel});
     }
   }
 
   getTargetHumidity(): number {
     let threshold: number;
-    switch (this.deroMode) {
+    switch (this.dreoMode) {
       case 1: // auto
         threshold = this.targetHumAutoLevel;
         this.platform.log.debug('Triggered GET TargetHumidity (Auto): %s', threshold);
@@ -311,12 +389,14 @@ export class HumidifierAccessory extends BaseAccessory {
         break;
       default: // manual do not have a target humidity, it has fog level
         // return the threshold for Auto mode as a sensible default when manual is active
-        threshold = this.targetHumAutoLevel || DEFAULT_HUMIDITY;
+        threshold = this.targetHumAutoLevel;
         this.platform.log.debug('Triggered GET TargetHumidity (Manual - Returning Auto Level): %s', threshold);
         break;
     }
-    // Always return integer for HomeKit
-    return Math.max(MIN_HUMIDITY, Math.min(MAX_HUMIDITY, Math.round(threshold || DEFAULT_HUMIDITY)));
+    // Return the actual device value for HomeKit to display correctly
+    const validatedValue = this.validateHumidityForHomeKit(threshold);
+    this.platform.log.debug('GET TargetHumidity returning: %s (from device value: %s)', validatedValue, threshold);
+    return validatedValue;
   }
 
   // Can only be set in manual mode
@@ -329,12 +409,12 @@ export class HumidifierAccessory extends BaseAccessory {
       this.platform.webHelper.control(this.sn, {'poweron': this.on});
       return;
     }
-    if (this.deroMode === 0) { // manual
+    if (this.dreoMode === 0) { // manual
       this.platform.webHelper.control(this.sn, {'foglevel': this.manualFogLevel});
     } else {
-      this.platform.log.warn('WARN: Switching to manual mode to set fog level. Current mode: %s', this.deroMode);
-      this.deroMode = 0; // Set mode to manual
-      this.platform.webHelper.control(this.sn, {'mode': this.deroMode, 'foglevel': this.manualFogLevel});
+      this.platform.log.warn('WARN: Switching to manual mode to set fog level. Current mode: %s', this.dreoMode);
+      this.dreoMode = 0; // Set mode to manual
+      this.platform.webHelper.control(this.sn, {'mode': this.dreoMode, 'foglevel': this.manualFogLevel});
     }
   }
 
@@ -348,16 +428,20 @@ export class HumidifierAccessory extends BaseAccessory {
     this.platform.log.debug('Current Humidifier State: %s', this.currState);
     this.humidifierService.updateCharacteristic(this.platform.Characteristic.CurrentHumidifierDehumidifierState, this.currState);
     this.sleepSwitchService.updateCharacteristic(this.platform.Characteristic.On, this.getSleepMode());
-    this.hotFogSwitchService.updateCharacteristic(this.platform.Characteristic.On, this.getHotFog());
+
+    // Only update Hot Fog if the service exists (device supports it)
+    if (this.hotFogSwitchService) {
+      this.hotFogSwitchService.updateCharacteristic(this.platform.Characteristic.On, this.getHotFog());
+    }
   }
 
   /**
    * 0 HomeKit: Auto - Dero: Manual (0)
    * 1 HomeKit: Humidifying - Dero: Auto (1) & Sleep (2)
    **/
-  private updateTargetHumidifierState(deroMode: number) {
-    this.deroMode = deroMode;
-    if (this.deroMode === 2) {
+  private updateTargetHumidifierState(dreoMode: number) {
+    this.dreoMode = dreoMode;
+    if (this.dreoMode === 2) {
       if (!this.on) {
         this.on = true;
         this.humidifierService.updateCharacteristic(this.platform.Characteristic.Active, this.on);
@@ -365,7 +449,7 @@ export class HumidifierAccessory extends BaseAccessory {
       this.sleepSwitchService.updateCharacteristic(this.platform.Characteristic.On, true);
       this.humidifierService.updateCharacteristic(this.platform.Characteristic.TargetHumidifierDehumidifierState, 1);
     } else {
-      this.humidifierService.updateCharacteristic(this.platform.Characteristic.TargetHumidifierDehumidifierState, this.deroMode);
+      this.humidifierService.updateCharacteristic(this.platform.Characteristic.TargetHumidifierDehumidifierState, this.dreoMode);
     }
   }
 
@@ -380,9 +464,9 @@ export class HumidifierAccessory extends BaseAccessory {
         }
         break;
       case 'mode':
-        this.deroMode = reported.mode ?? this.deroMode;
-        this.platform.log.debug('Humidifier mode reported: %s', this.deroMode);
-        this.updateTargetHumidifierState(this.deroMode);
+        this.dreoMode = reported.mode ?? this.dreoMode;
+        this.platform.log.debug('Humidifier mode reported: %s', this.dreoMode);
+        this.updateTargetHumidifierState(this.dreoMode);
         break;
       case 'suspend':
         this.suspended = reported.suspend ?? this.suspended;
@@ -392,13 +476,18 @@ export class HumidifierAccessory extends BaseAccessory {
       case 'rh':
         this.currentHum = reported.rh ?? this.currentHum;
         this.platform.log.debug('Humidifier humidity: %s', this.currentHum);
-        this.humidifierService.updateCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity, this.currentHum);
-        this.humidityService.updateCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity, this.currentHum);
+        // Validate current humidity for HomeKit display consistency
+        const validatedCurrentHum = this.validateHumidityForHomeKit(this.currentHum);
+        this.humidifierService.updateCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity, validatedCurrentHum);
+        this.humidityService.updateCharacteristic(this.platform.Characteristic.CurrentRelativeHumidity, validatedCurrentHum);
         break;
       case 'hotfogon':
         this.fogHot = reported.hotfogon ?? this.fogHot;
         this.platform.log.debug('Humidifier hotfogon: %s', this.fogHot);
-        this.hotFogSwitchService.updateCharacteristic(this.platform.Characteristic.On, this.fogHot);
+        // Only update if the service exists (device supports hot fog)
+        if (this.hotFogSwitchService) {
+          this.hotFogSwitchService.updateCharacteristic(this.platform.Characteristic.On, this.fogHot);
+        }
         break;
       case 'foglevel':
         this.manualFogLevel = reported.foglevel ?? this.manualFogLevel;
@@ -412,8 +501,8 @@ export class HumidifierAccessory extends BaseAccessory {
       case 'rhautolevel':
         this.targetHumAutoLevel = reported.rhautolevel ?? this.targetHumAutoLevel;
         this.platform.log.debug('Humidifier targetHumAutoLevel: %s', this.targetHumAutoLevel);
-        if (this.deroMode === 1) {
-          const valueToUpdate = Math.max(MIN_HUMIDITY, Math.min(MAX_HUMIDITY, Math.round(this.targetHumAutoLevel || DEFAULT_HUMIDITY)));
+        if (this.dreoMode === 1) {
+          const valueToUpdate = this.validateHumidityForHomeKit(this.targetHumAutoLevel);
           this.humidifierService
           .updateCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold, valueToUpdate);
         }
@@ -421,8 +510,8 @@ export class HumidifierAccessory extends BaseAccessory {
       case 'rhsleeplevel':
         this.targetHumSleepLevel = reported.rhsleeplevel ?? this.targetHumSleepLevel;
         this.platform.log.debug('Humidifier targetHumSleepLevel: %s', this.targetHumSleepLevel);
-        if (this.deroMode === 2) {
-          const valueToUpdate = Math.max(MIN_HUMIDITY, Math.min(MAX_HUMIDITY, Math.round(this.targetHumSleepLevel || DEFAULT_HUMIDITY)));
+        if (this.dreoMode === 2) {
+          const valueToUpdate = this.validateHumidityForHomeKit(this.targetHumSleepLevel);
           this.humidifierService
           .updateCharacteristic(this.platform.Characteristic.RelativeHumidityHumidifierThreshold, valueToUpdate);
         }
@@ -435,6 +524,19 @@ export class HumidifierAccessory extends BaseAccessory {
         } else {
           this.humidifierService.updateCharacteristic(this.platform.Characteristic.WaterLevel, 100);
         }
+        break;
+      case 'filtertime':
+        const filterLife = reported.filtertime ?? 100;
+        this.platform.log.debug('Humidifier filter life: %s%', filterLife);
+        // Could add a FilterLifeLevel characteristic if desired for HomeKit
+        break;
+      case 'worktime':
+        const workTime = reported.worktime ?? 0;
+        this.platform.log.debug('Humidifier work time since cleaning: %s minutes', workTime);
+        break;
+      case 'connected':
+        const connected = reported.connected ?? true;
+        this.platform.log.debug('Humidifier connection status: %s', connected ? 'Connected' : 'Disconnected');
         break;
       default:
         this.platform.log.debug('Incoming [%s]: %s', key, reported);
