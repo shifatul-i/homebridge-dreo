@@ -20,10 +20,10 @@ Homebridge plugin for Dreo brand smart devices. [Dreo Fans on Amazon](https://ww
   <img src="https://github.com/user-attachments/assets/17e6350d-ec68-48e8-88da-3bd553dffbf2" width=200>
 </p>
 <p align="center">
-  <img src="https://raw.githubusercontent.com/shifatul-i/homebridge-dreo/main/.github/images/Humidifier.png" width=200>
-  <img src="https://raw.githubusercontent.com/shifatul-i/homebridge-dreo/main/.github/images/Humidifier_Fog_Level.png" width=200>
-  <img src="https://raw.githubusercontent.com/shifatul-i/homebridge-dreo/main/.github/images/Humidifier_Warm_Mist.png" width=200>
-  <img src="https://raw.githubusercontent.com/shifatul-i/homebridge-dreo/main/.github/images/Humidifier_Sleep_Mode.png" width=200>
+  <img src="https://github.com/user-attachments/assets/db6dd0a4-a8db-4640-b2cd-7e0247ed8f88" width=200>
+  <img src="https://github.com/user-attachments/assets/ec15def0-343a-4ecb-a6e9-d23d1a12b4f1" width=200>
+  <img src="https://github.com/user-attachments/assets/a9fd3ba8-e42e-4c57-a5c4-c2ba58a8e1c2" width=200>
+  <img src="https://github.com/user-attachments/assets/f59b7d31-83d0-4ffc-b466-6dfa51438045" width=200>
 </p>
 
 ## Compatability
@@ -84,9 +84,9 @@ Please open an issue if you have another model that works or doesn't work. If yo
 #### To see Humidifier "Water Level" and "Fog Level" in HomeKit, you will need to select `Show as Separate Tiles` in HomeKit. An then name the Switches accordingly, i.e. `Sleep Mode` & `Warm Mist`.
 
 <div align="center" style="display: flex; justify-content: center; align-items: center; flex-direction: row;">
-    <img src="https://raw.githubusercontent.com/shifatul-i/homebridge-dreo/main/.github/images/Setup_1_Show_Separate.png" width=200>
-    <img src="https://raw.githubusercontent.com/shifatul-i/homebridge-dreo/main/.github/images/Setup_2_Rename.png" width=200>
-    <img src="https://raw.githubusercontent.com/shifatul-i/homebridge-dreo/main/.github/images/Setup_3_Fog_Level.png" width=200>
+    <img src="https://github.com/user-attachments/assets/f8b8f8f3-4625-4c04-aa62-da19016bf87f" width=200>
+    <img src="https://github.com/user-attachments/assets/9392f4d3-1499-407a-bee5-7357f16e560f" width=200>
+    <img src="https://github.com/user-attachments/assets/9d56a4e8-c3ac-4975-8d80-ca65087f9b24" width=200>
 </div>
 
 * **Auto Mode:** Controls Dreo `Manual Mode`, as HomeKit hides Humidity slider in `Auto Mode`. You can adjust `Mist Level`, which reflects the Dero `Manual Mode` in the Dreo app.
